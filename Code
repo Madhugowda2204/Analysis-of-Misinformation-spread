@@ -1,0 +1,274 @@
+import dash
+from dash import dcc, html
+import plotly.graph_objects as go
+import networkx as nx
+import pandas as pd
+import numpy as np
+
+# Read the CSV file into a pandas DataFrame (replace with the correct path)
+df_csv = pd.read_csv("C:/Users/Madhushree/OneDrive/Desktop/5th sem/sna/updated.csv")
+
+# Create the directed graph from the DataFrame (assuming 'source' and 'target' represent nodes)
+G = nx.from_pandas_edgelist(df_csv, source='source', target='target', create_using=nx.DiGraph())
+
+# Create a dictionary of positions for consistent layout (including 3D)
+pos_2d = nx.spring_layout(G, seed=42)  # Default 2D layout
+pos_3d = nx.spring_layout(G, dim=3, seed=42)  # 3D layout
+
+# Function to get node degree
+def get_node_degree(node):
+    return G.degree(node)
+
+# Function to get in-degree for a node
+def get_node_in_degree(node):
+    return G.in_degree(node)
+
+# Function to create the main network graph with directed edges
+def create_full_graph(layout='2d'):
+    # Choose layout based on the input
+    pos = pos_3d if layout == '3d' else pos_2d
+    
+    # Node color based on degree (just as an example)
+    node_color = ['blue' if get_node_degree(node) > 2 else 'lightgray' for node in G.nodes]
+    
+    # Create node labels with degree info for hover
+    node_labels = [f"{node}<br>In-degree: {get_node_degree(node)}" for node in G.nodes]
+
+    fig = go.Figure()
+
+    # Add directed edges (arrows) with new edge styling (dashed, varying thickness, color)
+    for edge in G.edges():
+        fig.add_trace(go.Scatter3d(
+            x=[pos[edge[0]][0], pos[edge[1]][0]],
+            y=[pos[edge[0]][1], pos[edge[1]][1]],
+            z=[pos[edge[0]][2] if layout == '3d' else 0, pos[edge[1]][2] if layout == '3d' else 0],
+            mode='lines',
+            line=dict(color='rgba(0,0,0,0.5)', width=2, dash='dot'),  # Dashed edges with gray color
+            hoverinfo='skip'
+        ))
+
+    # Add nodes with hover information
+    fig.add_trace(go.Scatter3d(
+        x=[pos[node][0] for node in G.nodes],
+        y=[pos[node][1] for node in G.nodes],
+        z=[pos[node][2] for node in G.nodes] if layout == '3d' else [0] * len(G.nodes),
+        mode='markers+text',
+        marker=dict(size=15, color=node_color, opacity=0.8),
+        text=node_labels,
+        textposition='top center',
+        hoverinfo='text'
+    ))
+
+    # Style the layout
+    fig.update_layout(
+        title="Main Network Graph with Directed Edges (3D)",
+        showlegend=False,
+        scene=dict(
+            xaxis=dict(title='X', visible=True),
+            yaxis=dict(title='Y', visible=True),
+            zaxis=dict(title='Z', visible=True) if layout == '3d' else None
+        ),
+        plot_bgcolor='lightgray',
+        height=600,
+        margin=dict(l=0, r=0, b=0, t=40)
+    )
+
+    return fig
+
+# Function to find the path between source and target
+def find_path(source, target):
+    try:
+        return nx.shortest_path(G, source=source, target=target)
+    except nx.NetworkXNoPath:
+        return []
+
+# Function to create the subgraph based on target node and animate information passing
+def create_subgraph_with_animation(target_nodes, layout='2d'):
+    # Subgraph layout positions (2D or 3D)
+    pos = pos_3d if layout == '3d' else pos_2d
+    
+    # Build subgraph for target nodes and their predecessors
+    in_degree_nodes = set()
+    for target_node in target_nodes:
+        in_degree_nodes.update(G.predecessors(target_node))
+        in_degree_nodes.add(target_node)
+
+    # Create the subgraph
+    H = G.subgraph(in_degree_nodes)
+
+    # Find paths from source to target for each selected target node
+    paths = {}
+    source_nodes = {}
+    for target in target_nodes:
+        source = list(G.predecessors(target))[0] if len(list(G.predecessors(target))) > 0 else None
+        if source:
+            paths[target] = find_path(source, target)
+            source_nodes[target] = source
+    
+    # Create node labels and colors
+    node_labels = [f"{node}<br>In-degree: {get_node_in_degree(node)}" for node in H.nodes]
+    
+    # Node colors: Highlight source node in green, target nodes in red, others in blue
+    node_color = []
+    for node in H.nodes:
+        if node in target_nodes:
+            node_color.append('red')  # Target nodes in red
+        elif node in source_nodes.values():
+            node_color.append('green')  # Source nodes in green
+        else:
+            node_color.append('blue')  # Other nodes in blue
+
+    # Create the figure
+    fig = go.Figure()
+
+    # Add directed edges with animated style and color changes
+    for edge in H.edges():
+        fig.add_trace(go.Scatter3d(
+            x=[pos[edge[0]][0], pos[edge[1]][0]],
+            y=[pos[edge[0]][1], pos[edge[1]][1]],
+            z=[pos[edge[0]][2], pos[edge[1]][2]] if layout == '3d' else [0, 0],
+            mode='lines',
+            line=dict(color='rgba(0,0,0,0.3)', width=2, dash='dash'),  # Dashed edges with gray color
+            hoverinfo='skip'
+        ))
+
+    # Add nodes with animated scaling (pulse effect)
+    fig.add_trace(go.Scatter3d(
+        x=[pos[node][0] for node in H.nodes],
+        y=[pos[node][1] for node in H.nodes],
+        z=[pos[node][2] for node in H.nodes] if layout == '3d' else [0] * len(H.nodes),
+        mode='markers+text',
+        marker=dict(size=15, color=node_color, opacity=0.8),
+        text=node_labels,
+        textposition='top center',
+        hoverinfo='text'
+    ))
+
+    # Create frames for animation with enhanced transitions and smoother effect
+    frames = []
+    for target in target_nodes:
+        path = paths.get(target, [])
+        source = source_nodes.get(target)
+        if path and source:
+            # Create animation for each step in the path
+            for i in range(len(path)-1):
+                source_node = path[i]
+                destination_node = path[i+1]
+                line_points = np.linspace(np.array(pos[source_node]), np.array(pos[destination_node]), 30)  # 30 frames per edge
+                
+                # Add frames with animated edges and nodes scaling
+                for j in range(len(line_points)):
+                    frame = go.Frame(
+                        data=[
+                            go.Scatter3d(
+                                x=[line_points[j][0]],
+                                y=[line_points[j][1]],
+                                z=[line_points[j][2]] if layout == '3d' else [0],
+                                mode='markers',
+                                marker=dict(
+                                    size=12 + j,  # Gradual scaling of marker size
+                                    color='orange',
+                                    opacity=1 - j / 30  # Gradual fading effect
+                                ),
+                                text=[f"Passing info from {source_node} to {destination_node}"],
+                                textposition='top center',
+                                hoverinfo='text'
+                            ),
+                            # Add edges with animation effects
+                            go.Scatter3d(
+                                x=[pos[source_node][0], line_points[j][0]],
+                                y=[pos[source_node][1], line_points[j][1]],
+                                z=[pos[source_node][2], line_points[j][2]] if layout == '3d' else [0, 0],
+                                mode='lines',
+                                line=dict(
+                                    color='orange', width=3, dash='dot'
+                                ),
+                                hoverinfo='skip'
+                            )
+                        ],
+                        name=f'Frame {i}-{j}'
+                    )
+                    frames.append(frame)
+
+    # Add frames to the figure
+    fig.frames = frames
+
+    # Style the subgraph with animation controls
+    fig.update_layout(
+        title=f"Subgraph with Animated Information Passing",
+        showlegend=False,
+        scene=dict(
+            xaxis=dict(title='X', visible=True),
+            yaxis=dict(title='Y', visible=True),
+            zaxis=dict(title='Z', visible=True) if layout == '3d' else None
+        ),
+        plot_bgcolor='lightgray',
+        height=600,
+        margin=dict(l=0, r=0, b=0, t=40),
+        updatemenus=[dict(
+            type='buttons',
+            showactive=False,
+            buttons=[dict(
+                label='Play Animation',
+                method='animate',
+                args=[None, dict(frame=dict(duration=100, redraw=True), fromcurrent=True)]
+            )]
+        )]
+    )
+
+    return fig
+
+# Initialize Dash app
+app = dash.Dash(__name__)
+
+# Layout with interactive components
+app.layout = html.Div([
+    html.H1("Interactive 3D Network Graph with Subgraph and Animation"),
+    
+    # Dropdown for layout selection
+    dcc.Dropdown(
+        id='layout-dropdown',
+        options=[
+            {'label': '2D Layout', 'value': '2d'},
+            {'label': '3D Layout', 'value': '3d'}
+        ],
+        value='2d',  # Default to 2D
+        style={'width': '50%'}
+    ),
+    
+    # Dropdown to select multiple target nodes
+    dcc.Dropdown(
+        id='target-nodes-dropdown',
+        options=[{'label': node, 'value': node} for node in G.nodes],
+        multi=True,
+        placeholder="Select target nodes",
+        style={'width': '50%'}
+    ),
+    
+    # Graph components to display the graphs
+    dcc.Graph(id='main-network'),
+    dcc.Graph(id='subgraph')
+])
+
+# Callback to update the layout and animation based on dropdown selections
+@app.callback(
+    [dash.dependencies.Output('main-network', 'figure'),
+     dash.dependencies.Output('subgraph', 'figure')],
+    [dash.dependencies.Input('layout-dropdown', 'value'),
+     dash.dependencies.Input('target-nodes-dropdown', 'value')]
+)
+def update_graph(layout, target_nodes):
+    # Update the main graph
+    main_graph = create_full_graph(layout)
+    
+    # Update the subgraph with animation if target nodes are selected
+    if target_nodes:
+        subgraph = create_subgraph_with_animation(target_nodes, layout)
+    else:
+        subgraph = go.Figure()
+    
+    return main_graph, subgraph
+
+# Run the app
+if __name__ == '__main__':
+    app.run_server(debug=True)
