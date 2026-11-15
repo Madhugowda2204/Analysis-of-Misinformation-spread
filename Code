@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 
 # Read the CSV file into a pandas DataFrame (replace with the correct path)
-df_csv = pd.read_csv("C:/Users/Madhushree/OneDrive/Desktop/5th sem/sna/updated.csv")
+df_csv = pd.read_csv("updated.csv")
 
 # Create the directed graph from the DataFrame (assuming 'source' and 'target' represent nodes)
 G = nx.from_pandas_edgelist(df_csv, source='source', target='target', create_using=nx.DiGraph())
