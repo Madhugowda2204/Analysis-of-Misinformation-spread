@@ -32,7 +32,7 @@ def create_full_graph(layout='2d'):
     node_color = ['blue' if get_node_degree(node) > 2 else 'lightgray' for node in G.nodes]
     
     # Create node labels with degree info for hover
-    node_labels = [f"{node}<br>In-degree: {get_node_degree(node)}" for node in G.nodes]
+    node_labels = [f"{node}<br>In-degree: {get_node_in_degree(node)}" for node in G.nodes]
 
     fig = go.Figure()
 
