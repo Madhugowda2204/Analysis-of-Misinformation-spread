@@ -87,24 +87,34 @@ def create_subgraph_with_animation(target_nodes, layout='2d'):
     # Subgraph layout positions (2D or 3D)
     pos = pos_3d if layout == '3d' else pos_2d
     
-    # Build subgraph for target nodes and their predecessors
-    in_degree_nodes = set()
-    for target_node in target_nodes:
-        in_degree_nodes.update(G.predecessors(target_node))
-        in_degree_nodes.add(target_node)
-
-    # Create the subgraph
-    H = G.subgraph(in_degree_nodes)
-
-    # Find paths from source to target for each selected target node
+    # Find a longer path from an upstream source to each selected target
     paths = {}
     source_nodes = {}
+    in_degree_nodes = set()
+
     for target in target_nodes:
-        source = list(G.predecessors(target))[0] if len(list(G.predecessors(target))) > 0 else None
-        if source:
-            paths[target] = find_path(source, target)
-            source_nodes[target] = source
-    
+        ancestors = nx.ancestors(G, target)
+        root_sources = [node for node in ancestors if G.in_degree(node) == 0]
+        candidate_sources = root_sources if root_sources else list(ancestors)
+
+        candidate_paths = []
+        for source in candidate_sources:
+            try:
+                candidate_paths.append(find_path(source, target))
+            except nx.NetworkXNoPath:
+                continue
+
+        if candidate_paths:
+            selected_path = max(candidate_paths, key=len)
+            paths[target] = selected_path
+            source_nodes[target] = selected_path[0]
+            in_degree_nodes.update(selected_path)
+        else:
+            in_degree_nodes.add(target)
+
+    # Create a subgraph containing the selected paths
+    H = G.subgraph(in_degree_nodes)
+
     # Create node labels and colors
     node_labels = [f"{node}<br>In-degree: {get_node_in_degree(node)}" for node in H.nodes]
     
@@ -144,12 +154,28 @@ def create_subgraph_with_animation(target_nodes, layout='2d'):
         hoverinfo='text'
     ))
 
+    # Add dedicated traces that the animation frames can update
+    animation_marker_trace = len(H.edges()) + 1
+    animation_line_trace = len(H.edges()) + 2
+    fig.add_trace(go.Scatter3d(
+        x=[], y=[], z=[],
+        mode='markers',
+        marker=dict(size=12, color='orange'),
+        hoverinfo='skip'
+    ))
+    fig.add_trace(go.Scatter3d(
+        x=[], y=[], z=[],
+        mode='lines',
+        line=dict(color='orange', width=3, dash='dot'),
+        hoverinfo='skip'
+    ))
+
     # Create frames for animation with enhanced transitions and smoother effect
     frames = []
     for target in target_nodes:
         path = paths.get(target, [])
         source = source_nodes.get(target)
-        if path and source:
+        if path and source is not None:
             # Create animation for each step in the path
             for i in range(len(path)-1):
                 source_node = path[i]
@@ -186,7 +212,8 @@ def create_subgraph_with_animation(target_nodes, layout='2d'):
                                 hoverinfo='skip'
                             )
                         ],
-                        name=f'Frame {i}-{j}'
+                        name=f'Target {target} - Edge {i} - Frame {j}',
+                        traces=[animation_marker_trace, animation_line_trace]
                     )
                     frames.append(frame)
 
